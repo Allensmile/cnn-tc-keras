@@ -48,14 +48,16 @@ def get_W(word_vecs, k=300):
     """
     vocab_size = len(word_vecs)
     word_idx_map = dict()
+    idx_word_map = dict()
     W = np.zeros(shape=(vocab_size+1, k), dtype='float32')            
     W[0] = np.zeros(k, dtype='float32')
     i = 1
     for word in word_vecs:
         W[i] = word_vecs[word]
         word_idx_map[word] = i
+        idx_word_map[i] = word
         i += 1
-    return W, word_idx_map
+    return W, word_idx_map, idx_word_map
 
 def load_bin_vec(fname, vocab):
     """
@@ -125,7 +127,7 @@ def add_unknown_words(word_vecs, vocab, k=300, min_df=1):
         if word not in word_vecs and vocab[word] >= min_df:
             word_vecs[word] = np.random.uniform(-0.25,0.25,k)
             i += 1
-            if i % 100 ==0:
+            if i % 10000 ==0:
                 print i,' unknown word is added such as ', word,'.'  
 
 def clean_str(string, TREC=False):
@@ -181,9 +183,9 @@ if __name__=="__main__":
     print "word2vec loaded!\n"
     print "num words already in word2vec: " + str(len(w2v))
     add_unknown_words(w2v, vocab, k)
-    W, word_idx_map = get_W(w2v, k)
+    W, word_idx_map, idx_word_map = get_W(w2v, k)
     rand_vecs = {}
     add_unknown_words(rand_vecs, vocab, k)
-    W2, _ = get_W(rand_vecs, k)
-    cPickle.dump([revs, W, W2, word_idx_map, vocab], open(fpath, "wb"))
+    W2, _, _ = get_W(rand_vecs, k)
+    cPickle.dump([revs, W, W2, word_idx_map, vocab, idx_word_map], open(fpath, "wb"))
     print "dataset created!"

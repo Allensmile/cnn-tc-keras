@@ -12,12 +12,13 @@ class CnnDataSet:
     W = []
     W2 = []
     word_idx_map = dict()
+    idx_word_map = dict()
     vocab = defaultdict(float)
 
     def __init__(self):
         pass
 
-    def get_idx_from_sent(self, sent, max_l=51, filter_h=5):
+    def get_idx_from_sent(self, sent, max_l=51, filter_h=5, expanded=True):
         """
         Transforms sentence into a list of indices. Pad with zeroes.
         """
@@ -27,12 +28,21 @@ class CnnDataSet:
             x.append(0)
         words = sent.split()
         for word in words:
-            if word in self.word_idx_map and len(x) < max_l+2*pad:
-                x.append(self.word_idx_map[word])
-        while len(x) < max_l+2*pad:
-            x.append(0)
+            if word in self.word_idx_map:
+                if expanded == True and len(x) < max_l+2*pad:
+                    x.append(self.word_idx_map[word])
+                if expanded == False:
+                    x.append(self.word_idx_map[word])
 
-        self.nrows = max_l+2*pad
+        if expanded == True:
+            while len(x) < max_l+2*pad:
+                x.append(0)
+            self.nrows = max_l+2*pad
+        else:
+            for i in xrange(pad):
+                x.append(0)
+            self.nrows = len(x)
+
         return x
 
     def search(self, sent, w):
@@ -64,6 +74,26 @@ class CnnDataSet:
         testY = np.array(testY)
         return [trainX, trainY, testX, testY]     
 
+    def make_cross_id_data_cv(self, revs, cv, max_l=51, filter_h=5, expended=False):
+        """
+        Transforms sentences into a 2-d matrix.
+        """
+        trainX, trainY, testX, testY  = [], [], [], []
+        for rev in revs:        
+            sent = self.get_idx_from_sent(rev["text"], max_l, filter_h, expended)
+            if rev["split"]==cv:            
+                testX.append(sent)        
+                testY.append(rev["y"])
+            else:  
+                trainX.append(sent)   
+                trainY.append(rev["y"])
+        trainX = np.array(trainX)
+        trainY = np.array(trainY)
+        testX = np.array(testX)
+        testY = np.array(testY)
+        return [trainX, trainY, testX, testY]     
+
+
     def make_test_data(self, revs, w, max_l=51, filter_h=5):
         """
         Transforms sentences into a 2-d matrix.
@@ -77,6 +107,31 @@ class CnnDataSet:
         testX = np.array(testX)
         testY = np.array(testY)
         return [testX, testY]
+
+    def make_test_id_data(self, revs, w, max_l=51, filter_h=5):
+        """
+        Transforms sentences into a 2-d matrix.
+        """
+        testX, testY  = [], []
+        for rev in revs:           
+            sent = self.get_idx_from_sent(rev["text"], max_l, filter_h, False)
+            testX.append(sent)   
+            testY.append(rev["y"])
+        testX = np.array(testX)
+        testY = np.array(testY)
+        return [testX, testY]
+
+    def idx2word(self, words, idx_word_map):
+        """
+        Transforms sentences into a 2-d matrix.
+        """
+        x = []
+        for word in words:
+            if idx_word_map.has_key(word):
+                x.append(idx_word_map[word])
+            else:
+                x.append('_')
+        return x
      
 if __name__=="__main__":
     print "args: max_length train-filepath test-filepath dataset-filepath"

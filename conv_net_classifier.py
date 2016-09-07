@@ -6,9 +6,9 @@ import pandas as pd
 import math
 from keras.utils import np_utils
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Activation, Flatten, Input
+from keras.layers import Dense, Dropout, Activation, Flatten, Input, Merge
 from keras.layers import Convolution1D, ZeroPadding1D, MaxPooling1D
-from keras.layers import Convolution2D, ZeroPadding2D, MaxPooling2D, Embedding
+from keras.layers import Convolution2D, ZeroPadding2D, MaxPooling2D, Embedding, LSTM
 from keras.preprocessing import sequence
 import conv_net_dataset
 from conv_net_dataset import CnnDataSet
@@ -98,6 +98,48 @@ def build_vgg16(img_rows, img_cols):
     
     return model
  
+def build_merge_model(max_caption_len, vocab_size):
+    nb_classes = 2
+    word_dim = 256
+    # number of convolutional filters to use
+    nb_filters = 64
+    # size of pooling area for max pooling
+    nb_pool = 2 
+    # convolution kernel size
+    kernel_size = 5
+    cnn_model = Sequential()
+    cnn_model.add(Embedding(output_dim=word_dim, input_dim=vocab_size, input_length=max_caption_len, name='main_input'))
+    cnn_model.add(Dropout(0.5))
+    cnn_model.add(Convolution1D(nb_filters, kernel_size))
+    cnn_model.add(Activation('relu'))
+    cnn_model.add(Convolution1D(nb_filters, kernel_size))
+    cnn_model.add(Activation('relu'))
+    cnn_model.add(MaxPooling1D(nb_pool))
+    cnn_model.add(Dropout(0.5))
+    cnn_model.add(Flatten())
+    cnn_model.add(Dense(256))
+    cnn_model.add(Activation('relu'))
+    cnn_model.add(Dropout(0.3))
+
+    lstm_model = Sequential()
+    lstm_model.add(Embedding(output_dim=word_dim, input_dim=vocab_size, input_length=max_caption_len, name='main_input'))
+    lstm_model.add(LSTM(output_dim=128, activation='sigmoid', inner_activation='hard_sigmoid'))
+    lstm_model.add(Dropout(0.5))
+    lstm_model.add(Dense(256))
+    lstm_model.add(Activation('relu'))
+    lstm_model.add(Dropout(0.3))
+
+    merged = Merge([cnn_model, lstm_model], mode='concat')
+    final_model = Sequential()
+    final_model.add(merged)
+    final_model.add(Dense(nb_classes))
+    final_model.add(Activation('softmax')) 
+    final_model.compile(loss='categorical_crossentropy',
+                        optimizer='adadelta',
+                        metrics=['accuracy'])
+
+    return final_model
+
 def build_embedding_cnn(max_caption_len, vocab_size):
     nb_classes = 2
     word_dim = 256
@@ -111,7 +153,8 @@ def build_embedding_cnn(max_caption_len, vocab_size):
     
     model = Sequential()
     model.add(Embedding(output_dim=word_dim, input_dim=vocab_size, input_length=max_caption_len, name='main_input'))
-    #model.add(LSTM(, return_sequences=True))
+    model.add(LSTM(output_dim=128, activation='sigmoid', inner_activation='hard_sigmoid', return_sequences=True))
+    model.add(Dropout(0.5))
     model.add(Convolution1D(nb_filters, kernel_size))
     model.add(Activation('relu'))
     model.add(Convolution1D(nb_filters, kernel_size))
@@ -184,7 +227,7 @@ def run_with_vector():
     TN = confusion[0, 0]
     FP = confusion[0, 1]
     FN = confusion[1, 0]
-    print 'Confusion matrix:', confusion
+    print 'Confusion matrix:\n', confusion
     print 'Accuracy:(TP+TN) / float(TP+TN+FN+FP)=', (TP+TN) / float(TP+TN+FN+FP)
     print 'Error:(FP+FN) / float(TP+TN+FN+FP)=', (FP+FN) / float(TP+TN+FN+FP)
     print 'Recall:TP / float(TP+FN)=',TP / float(TP+FN)
@@ -213,19 +256,16 @@ def run_with_embedding():
 
     batch_size = 256
     nb_classes = 2
-    nb_epoch = 6 
+    nb_epoch = 5 
     max_len = 500
 
     print '---- before ---- trainX[0]:',len(trainX[0]),'trainX.shape:',trainX.shape
     print ' '.join([str(x) for x in trainX[0]])
     print ' '.join(cf.idx2word(trainX[0], cf.idx_word_map))
     
-    trainX =  sequence.pad_sequences(trainX, maxlen=max_len)#trainX.reshape(trainX.shape[0],-1,max_len)
-    validateX =  sequence.pad_sequences(validateX, maxlen=max_len)#validateX.reshape(validateX.shape[0],-1,max_len)
-    testX =  sequence.pad_sequences(testX, maxlen=max_len)#testX.reshape(testX.shape[0],-1,max_len)
-    #trainX = trainX.astype('float32')
-    #validateX = validateX.astype('float32')
-    #testX = testX.astype('float32')
+    trainX =  sequence.pad_sequences(trainX, maxlen=max_len)
+    validateX =  sequence.pad_sequences(validateX, maxlen=max_len)
+    testX =  sequence.pad_sequences(testX, maxlen=max_len)
     print '---- after ---- trainX[0]:',len(trainX[0]),'trainX.shape:',trainX.shape
     print ' '.join([str(x) for x in trainX[0]])
     print ' '.join(cf.idx2word(trainX[0], cf.idx_word_map))
@@ -239,11 +279,11 @@ def run_with_embedding():
     validateY = np_utils.to_categorical(validateY, nb_classes)
     testY = np_utils.to_categorical(testY, nb_classes)
 
-    model = build_embedding_cnn(max_len, len(cf.vocab))  #  build_vgg16(img_rows, img_cols)#
-    model.fit(trainX, trainY, batch_size=batch_size, nb_epoch=nb_epoch,
-              verbose=1, validation_data=(validateX, validateY))
-    score = model.evaluate(testX, testY, verbose=0)
-    predY = model.predict_classes(testX, verbose=0)
+    model = build_merge_model(max_len, len(cf.vocab))#build_embedding_cnn(max_len, len(cf.vocab)) 
+    model.fit([trainX,trainX], trainY, batch_size=batch_size, nb_epoch=nb_epoch,
+              verbose=1, validation_data=([validateX,validateX], validateY))
+    score = model.evaluate([testX,testX], testY, verbose=0)
+    predY = model.predict_classes([testX,testX], verbose=0)
     print('Test score:', score[0])
     print('Test accuracy:', score[1])
     confusion = metrics.confusion_matrix(testY[:,1], predY)
